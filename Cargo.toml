@@ -1,0 +1,35 @@
+[package]
+authors = ["s"]
+edition = "2018"
+readme = "README.md"
+name = "mcu-bootloader-rust"
+version = "0.1.0"
+
+[dependencies]
+cortex-m = "0.6.0"
+cortex-m-rt = "0.6.10"
+panic-halt = "0.2.0"
+
+# Uncomment for the device example.
+# Update `memory.x`, set target to `thumbv7em-none-eabihf` in `.cargo/config`,
+# and then use `cargo build --examples device` to build it.
+# [dependencies.stm32f3]
+# features = ["stm32f303", "rt"]
+# version = "0.7.1"
+
+[dependencies.stm32l0xx-hal]
+version = "0.6.2"
+features = ["mcu-STM32L082CZYx", "rt"]
+# (TODO? there is also a feature "disable-linker-script". Should we use that??)
+
+# this lets you use `cargo fix`!
+[[bin]]
+name = "mcu-bootloader-rust"
+test = false
+bench = false
+
+[profile.release]
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+lto = true # better optimizations
+opt-level = 2
