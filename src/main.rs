@@ -13,7 +13,6 @@ use stm32l0xx_hal::{
     pac,
     prelude::*,
     rcc::Config,
-    flash::{FLASH, PAGE_SIZE},
     spi,
 };
 
@@ -22,90 +21,8 @@ use spi_memory::{
     Read,
 };
 
+mod int_flash;
 
-// internal flash stuff (TODO move to separate file) //
-
-struct FlashAddr {
-    start : u32,
-
-    user_start : u32,
-    user_length : usize,
-}
-
-extern {
-    static __FLASH_START: u32;
-    static __FLASH_USER_START: u32;
-    static __FLASH_USER_LENGTH: u32;
-}
-fn flash_addr() -> FlashAddr {
-
-    // Read constants from linker script
-    let flash_start: *const u32 = unsafe{ &__FLASH_START};
-    let flash_start = flash_start as u32;
-    
-    let flash_user_start: *const u32 = unsafe{ &__FLASH_USER_START};
-    let flash_user_start = flash_user_start as u32;
-    
-    let flash_user_length: *const u32 = unsafe{ &__FLASH_USER_LENGTH};
-    let flash_user_length = flash_user_length as usize;
-
-    // Struct with info about flash addresses
-    FlashAddr {
-        start: flash_start,
-        user_start: flash_user_start,
-        user_length: flash_user_length,
-    }
-}
-fn flash_write_page(mut flash: stm32l0xx_hal::flash::FLASH,
-    page: u32, bytes: &[u8; PAGE_SIZE as usize]) {
-
-    let addr = flash_addr();
-    let lower_bound = addr.user_start;
-    let upper_bound = addr.user_start + addr.user_length as u32;
-
-    let addr = addr.start + page * PAGE_SIZE;
-    assert!(addr >= lower_bound);
-    assert!((addr+PAGE_SIZE) <= upper_bound);
-
-    // NOTE: erase + programming is quite slow(?).
-    // This could be optimized by reading the flash page first,
-    // then only writing if the data is different
-
-    // Erase page
-    flash
-        .erase_flash_page(addr as *mut u32)
-        .expect("Faileld to erase flash page");
-    
-    // Verify page is all-zeroes (this is redundant, could be removed later..)
-    let page_ptr = addr as *mut u8;
-    for i in 0..PAGE_SIZE {
-        let byte = unsafe{*page_ptr.offset(i as isize)};
-        assert_eq!(byte, 0u8)
-    }
-
-
-    // Write two halfpages
-    for h in 0..2 {
-        const WORDS_PER_HALFPAGE: usize = (PAGE_SIZE/4/2) as usize;
-        let mut p_words : [u32; WORDS_PER_HALFPAGE] = [0; WORDS_PER_HALFPAGE];
-        let byte_offset_halfpage = h*(4*WORDS_PER_HALFPAGE);
-        for w in 0..WORDS_PER_HALFPAGE {
-            let byte_offset = 4*w + byte_offset_halfpage;
-            p_words[w] = bytes[byte_offset] as u32
-                | (bytes[byte_offset+1] as u32) << 8
-                | (bytes[byte_offset+2] as u32) << 16
-                | (bytes[byte_offset+3] as u32) << 24;
-        }
-
-        // Program first halfpage
-        //let words = [0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf];
-        let halfpage_addr = addr + byte_offset_halfpage as u32;
-        flash
-            .write_flash_half_page(halfpage_addr  as *mut u32, &p_words)
-            .expect("Faileld to write a halfpage");
-    }
-}
-// end internal flash stuff //
 
 
 #[entry]
@@ -116,8 +33,6 @@ fn main() -> ! {
 
     // Configure the clock.
     let mut rcc = dp.RCC.freeze(Config::hsi16());
-
-    let int_flash = FLASH::new(dp.FLASH, &mut rcc);
 
     // Acquire the GPIO peripheral(s). This also enables the respective clocks (RCC)
     let gpiob = dp.GPIOB.split(&mut rcc);
@@ -137,9 +52,9 @@ fn main() -> ! {
     led.set_low().unwrap();
 
 
-    /*
+    
     // Internal Flash demo
-    let page_bytes : [u8; PAGE_SIZE as usize] = [
+    let page_bytes : [u8; int_flash::PAGE_SIZE as usize] = [
         0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
         0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,
         0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,
@@ -150,13 +65,16 @@ fn main() -> ! {
         0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x7B,0x7C,0x7D,0x7E,0x7F,
     ];
 
-    let addr = flash_addr();
+    let addr = int_flash::addresses();
     let offset = addr.user_start - addr.start;
-    let page_no = offset / PAGE_SIZE;
-    flash_write_page(int_flash, page_no, &page_bytes);
-    */
+    let page_no = offset / int_flash::PAGE_SIZE;
 
-    // Internal flash readout demo
+    let mut mcu_flash = int_flash::init(dp.FLASH, &mut rcc);
+    mcu_flash.write_page(page_no, &page_bytes);
+
+
+    
+    // External flash readout demo
 
     // 4mhz appears the maximum freq that works. Probably because the main clock is at 2-4mhz?
     let spi = dp
@@ -208,7 +126,7 @@ static mut USER_PROGRAM: extern "C" fn() = dummy;
 fn run_user_program(scb: SCB) -> ! {
 
     // Get important flash addresses
-    let addr = flash_addr();
+    let addr = int_flash::addresses();
 
     // Get user stack address from vector table
     let user_stack : *const u32 = addr.user_start as *const u32;
