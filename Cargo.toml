@@ -9,6 +9,7 @@ version = "0.1.0"
 cortex-m = "0.6.0"
 cortex-m-rt = "0.6.10"
 panic-halt = "0.2.0"
+spi-memory = "0.2.0"
 
 # Uncomment for the device example.
 # Update `memory.x`, set target to `thumbv7em-none-eabihf` in `.cargo/config`,
