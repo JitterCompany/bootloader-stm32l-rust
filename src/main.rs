@@ -19,6 +19,7 @@ use stm32l0xx_hal::{
 use spi_memory::{
     series25::Flash as ExternalFlash,
     Read,
+    BlockDevice,
 };
 
 mod int_flash;
@@ -35,12 +36,11 @@ fn main() -> ! {
     let mut rcc = dp.RCC.freeze(Config::hsi16());
 
     // Acquire the GPIO peripheral(s). This also enables the respective clocks (RCC)
+    let gpioa = dp.GPIOA.split(&mut rcc);
     let gpiob = dp.GPIOB.split(&mut rcc);
 
     // Configure flash GPIOs
-    // NOTE/TODO: on some boards, the external flash chip may be powered down
-    // by default. Make sure to enable the power first in that case!!
-    let mut ext_flash_cs = gpiob.pb12.into_push_pull_output();
+    let mut ext_flash_cs = gpiob.pb5.into_push_pull_output();
     ext_flash_cs.set_high().unwrap();
 
     let spi_sclk = gpiob.pb13;
@@ -48,7 +48,7 @@ fn main() -> ! {
     let spi_mosi = gpiob.pb15;
 
     // Configure LED.
-    let mut led = gpiob.pb5.into_push_pull_output();
+    let mut led = gpioa.pa0.into_push_pull_output();
     led.set_low().unwrap();
 
 
@@ -79,7 +79,7 @@ fn main() -> ! {
     // 4mhz appears the maximum freq that works. Probably because the main clock is at 2-4mhz?
     let spi = dp
         .SPI2
-        .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 4.mhz(), &mut rcc);
+        .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 1.mhz(), &mut rcc);
 
     let mut ext_flash = ExternalFlash::init(spi, ext_flash_cs).unwrap();
     let id = ext_flash.read_jedec_id().unwrap();
@@ -89,6 +89,9 @@ fn main() -> ! {
         0x00 | 0xff => panic!("No SPI flash detected!"),
         _ => {}
     };
+
+    let code = id.mfr_code();
+    assert!(code == 0x1F);
 
     // Read some data from flash memory. User firmware is responsible for writing a valid FW image here
     let mut ext_data: [u8; 128] = [0x33; 128];
