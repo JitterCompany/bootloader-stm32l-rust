@@ -3,6 +3,10 @@
 .gdb_history
 Cargo.lock
 target/
+pubkey.pem
+
+# auto-generated files
+src/pubkey.rs
 
 # editor files
 .vscode/*

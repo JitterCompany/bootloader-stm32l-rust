@@ -6,9 +6,7 @@ use core::cmp;
 
 use p256::{
     ecdsa::{
-        SigningKey,
         VerifyKey,
-        signature::Verifier,
         Signature,
     },
     elliptic_curve::FieldBytes,
@@ -16,10 +14,8 @@ use p256::{
 };
 
 use sha2::{Sha256, Digest};
-use signature::{
-    DigestSigner,
-    DigestVerifier,
-};
+use signature::DigestVerifier;
+
 
 
 use cortex_m_rt::entry;
@@ -43,6 +39,7 @@ use spi_memory::{
 };
 
 mod int_flash;
+mod pubkey;
 
 
 fn parse_meta(buffer: [u8; 8]) -> FirmwareMeta
@@ -106,7 +103,7 @@ fn main() -> ! {
     let spi_mosi = gpiob.pb15;
 
     // LED GPIO
-    led.set_low().unwrap();
+    led.set_high().unwrap();
 
 
     /*
@@ -169,33 +166,42 @@ fn main() -> ! {
 
     if ok {
         const BLOCK_SIZE: usize = 128;
+        let fw_len: usize = meta.fw_len - FW_SIGNATURE_LEN;
 
         let mut hasher = Sha256::new();
-        let mut bytes_remaining:usize = meta.fw_len - FW_SIGNATURE_LEN;
+        let mut bytes_remaining:usize = fw_len;
         let mut offset:usize = 0;
         while bytes_remaining > 0 {
             let mut buffer: [u8; BLOCK_SIZE] = [0; BLOCK_SIZE];
     
             let len:usize = cmp::min(bytes_remaining, BLOCK_SIZE);
     
-            ext_flash.read(offset as u32, &mut buffer[0..len]);
+            ext_flash.read(offset as u32, &mut buffer[0..len]).unwrap();
             bytes_remaining-= len;
             offset+= len;
             
             hasher.update(&buffer[0..len]);
         }
-        let output = hasher.finalize();
-        let mut out_array: [u8; 32]= [0;32];
-        for i in 0..32 {
-            out_array[i] = output[i];
+        led.set_low().unwrap();
+
+        // Read & verify ECC P-256 signature
+        let mut sig_bytes : [u8; 64] = [1;64];
+        ext_flash.read(fw_len as u32, &mut sig_bytes).unwrap();
+        let r = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[0..32]);
+        let r = scalar::NonZeroScalar::<p256::NistP256>::from_repr(r).unwrap();
+        let s = FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[32..64]);
+        let s = scalar::NonZeroScalar::<p256::NistP256>::from_repr(*s).unwrap();
+        let sig = Signature::from_scalars(r, s).unwrap();
+
+        let pubkey = pubkey::FW_SIGN_PUBKEY;
+        let verify_key = VerifyKey::new(&pubkey).unwrap();
+        if !verify_key.verify_digest(hasher, &sig).is_ok() {
+            ok = false;
         }
+    }
+
+    if ok {
         blink_ok(delay, led);
-        assert!(output[0] == 0x00);// will fail, check value in debugger
-    
-
-
-
-        //blink_ok(delay, led);
     } else {
         blink_error(delay, led);
     }
