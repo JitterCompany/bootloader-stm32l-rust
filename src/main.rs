@@ -2,6 +2,25 @@
 #![no_main]
 
 use panic_halt as _;
+use core::cmp;
+
+use p256::{
+    ecdsa::{
+        SigningKey,
+        VerifyKey,
+        signature::Verifier,
+        Signature,
+    },
+    elliptic_curve::FieldBytes,
+    elliptic_curve::scalar,
+};
+
+use sha2::{Sha256, Digest};
+use signature::{
+    DigestSigner,
+    DigestVerifier,
+};
+
 
 use cortex_m_rt::entry;
 use cortex_m::{
@@ -14,6 +33,7 @@ use stm32l0xx_hal::{
     prelude::*,
     rcc::Config,
     spi,
+    delay::Delay,
 };
 
 use spi_memory::{
@@ -25,6 +45,27 @@ use spi_memory::{
 mod int_flash;
 
 
+fn parse_meta(buffer: [u8; 8]) -> FirmwareMeta
+{
+    FirmwareMeta {
+        image_type: (buffer[1] as u16) << 8 | (buffer[0] as u16),
+        extra_file_count: (buffer[3] as u16) << 8 | (buffer[2] as u16),
+        fw_len: ((buffer[7] as u32) << 24
+            | (buffer[6] as u32) << 16
+            | (buffer[5] as u32) << 8
+            | (buffer[4] as u32)) as usize,
+    }
+}
+
+const FW_META_OFFSET: u32 = 0x4000;
+const FW_SIGNATURE_LEN: usize = 64;
+
+struct FirmwareMeta {
+    image_type: u16,
+    extra_file_count: u16,
+    fw_len: usize,
+}
+
 
 #[entry]
 fn main() -> ! {
@@ -34,25 +75,41 @@ fn main() -> ! {
 
     // Configure the clock.
     let mut rcc = dp.RCC.freeze(Config::hsi16());
+    let delay = cp.SYST.delay(rcc.clocks);
 
     // Acquire the GPIO peripheral(s). This also enables the respective clocks (RCC)
     let gpioa = dp.GPIOA.split(&mut rcc);
     let gpiob = dp.GPIOB.split(&mut rcc);
 
-    // Configure flash GPIOs
-    let mut ext_flash_cs = gpiob.pb5.into_push_pull_output();
-    ext_flash_cs.set_high().unwrap();
+    // Board-dependent GPIO mapping. TODO surely this can be done in a nicer way...
+    // NOTE: build with '--features "board-XXX"' to select one of the supported boards
+    #[cfg(feature = "board-6001-devkit")]
+    let mut led = gpiob.pb5.into_push_pull_output();
+    #[cfg(feature = "board-6001-devkit")]
+    let mut ext_flash_cs = gpiob.pb12.into_push_pull_output();
 
+    #[cfg(feature = "board-6001-sensor")]
+    let mut led = gpioa.pa0.into_push_pull_output();
+    #[cfg(feature = "board-6001-sensor")]
+    let mut ext_flash_cs = gpiob.pb5.into_push_pull_output();
+
+    #[cfg(feature = "board-6001-gateway")]
+    let mut led = gpioa.pa0.into_push_pull_output();
+    #[cfg(feature = "board-6001-gateway")]
+    let mut ext_flash_cs = gpioa.pa11.into_push_pull_output();  
+    
+    
+    // SPI flash GPIO
+    ext_flash_cs.set_high().unwrap();
     let spi_sclk = gpiob.pb13;
     let spi_miso = gpiob.pb14;
     let spi_mosi = gpiob.pb15;
 
-    // Configure LED.
-    let mut led = gpioa.pa0.into_push_pull_output();
+    // LED GPIO
     led.set_low().unwrap();
 
 
-    
+    /*
     // Internal Flash demo
     let page_bytes : [u8; int_flash::PAGE_SIZE as usize] = [
         0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,0x0F,
@@ -64,13 +121,15 @@ fn main() -> ! {
         0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6A,0x6B,0x6C,0x6D,0x6E,0x6F,
         0x70,0x71,0x72,0x73,0x74,0x75,0x76,0x77,0x78,0x79,0x7A,0x7B,0x7C,0x7D,0x7E,0x7F,
     ];
+    */
 
     let addr = int_flash::addresses();
     let offset = addr.user_start - addr.start;
     let page_no = offset / int_flash::PAGE_SIZE;
-
+/*
     let mut mcu_flash = int_flash::init(dp.FLASH, &mut rcc);
     mcu_flash.write_page(page_no, &page_bytes);
+    */
 
 
     
@@ -87,38 +146,89 @@ fn main() -> ! {
     // Detect SPI flash chip: must be a valid JEDEC manufacturer ID
     match id.mfr_code() {
         0x00 | 0xff => panic!("No SPI flash detected!"),
-        _ => {}
+        0x1F => (),
+        _ => panic!("Unknown SPI flash detected!"),
     };
 
-    let code = id.mfr_code();
-    assert!(code == 0x1F);
+    let mut ok = true;
 
-    // Read some data from flash memory. User firmware is responsible for writing a valid FW image here
-    let mut ext_data: [u8; 128] = [0x33; 128];
-    ext_flash.read(0, &mut ext_data).unwrap();
-    for i in 0..ext_data.len() {
-        assert!(ext_data[i] != 0x33);
+    // Read metadata from external flash
+    let mut buffer: [u8; 8] = [0; 8];
+    ext_flash.read(FW_META_OFFSET, &mut buffer).unwrap();
+    let meta = parse_meta(buffer);
+    if meta.image_type != 0x3801 || meta.extra_file_count != 0 {
+        ok = false;
     }
 
-
-
-
-
-
-
-    let mut delay = cp.SYST.delay(rcc.clocks);
-
-
-    for _ in 1..1000000000 {
-        led.set_high().unwrap();
-        delay.delay_ms(70u32);
-
-        led.set_low().unwrap();
-        delay.delay_ms(300u16);
+    // Firmware size must be within bounds
+    if meta.fw_len < FW_SIGNATURE_LEN 
+        || meta.fw_len < FW_META_OFFSET as usize
+        || (meta.fw_len + FW_SIGNATURE_LEN) > addr.user_length {
+            ok = false;
     }
+
+    if ok {
+        const BLOCK_SIZE: usize = 128;
+
+        let mut hasher = Sha256::new();
+        let mut bytes_remaining:usize = meta.fw_len - FW_SIGNATURE_LEN;
+        let mut offset:usize = 0;
+        while bytes_remaining > 0 {
+            let mut buffer: [u8; BLOCK_SIZE] = [0; BLOCK_SIZE];
+    
+            let len:usize = cmp::min(bytes_remaining, BLOCK_SIZE);
+    
+            ext_flash.read(offset as u32, &mut buffer[0..len]);
+            bytes_remaining-= len;
+            offset+= len;
+            
+            hasher.update(&buffer[0..len]);
+        }
+        let output = hasher.finalize();
+        let mut out_array: [u8; 32]= [0;32];
+        for i in 0..32 {
+            out_array[i] = output[i];
+        }
+        blink_ok(delay, led);
+        assert!(output[0] == 0x00);// will fail, check value in debugger
+    
+
+
+
+        //blink_ok(delay, led);
+    } else {
+        blink_error(delay, led);
+    }
+
+    
+    
+
+
     
     run_user_program(cp.SCB);
 }
+
+fn blink_ok<LED: OutputPin>(mut delay: Delay, mut led: LED)
+{
+    for _ in 1..5 {
+        led.set_high().ok();
+        delay.delay_ms(2_000_u32);
+
+        led.set_low().ok();
+        delay.delay_ms(400_u32);
+    }
+}
+fn blink_error<LED: OutputPin>(mut delay: Delay, mut led: LED)
+{
+    for _ in 1..40 {
+        led.set_high().ok();
+        delay.delay_ms(10_u32);
+
+        led.set_low().ok();
+        delay.delay_ms(150_u32);
+    }
+}
+
 
 
 #[no_mangle]
