@@ -1,4 +1,4 @@
-# How to generate a private key ind import it into a set of yubikeys for code signing
+# How to generate a private key and import it into a set of yubikeys for code signing
 
 Note that you may want to configure a PIN+PUK on the yubikey
 for enhanced security, as well as a management key to prevent unauthorized
