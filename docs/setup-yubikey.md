@@ -76,6 +76,6 @@ yubico-piv-tool -aread-cert -s 9c > yubi.crt
 openssl x509 -in yubi.crt -pubkey -noout > yubi.pub.pem
 ```
 
-# Step 3: use public key in bootloader
+## Step 3: use public key in bootloader
 Copy the generated `yubi.pub.pem` to the root of the bootloader project (same folder as `pubkey.pem.example`) and save it as `pubkey.pem`.
 The build script will automatically compile this public key into the bootloader.
