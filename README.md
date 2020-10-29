@@ -6,10 +6,14 @@ Simple bootloader for STM32L0 microcontrollers, written in Rust
 ## Code signing
 
 This bootloader expects the firmware to be signed with ECC `P-256`, sometimes refered to as `prime256v1`.
-For this, you need to create a private-public key pair. The private key is used to sign firmware images
+
+### Key pair
+You need to create a private-public key pair. The private key is used to sign firmware images
 and should be kept secret (e.g. keep it offline, ideally on a hardware smartcard/yubikey).
+[See docs on how to do it with a Yubikey](https://github.com/JitterCompany/bootloader-stm32l-rust/blob/master/docs/setup-yubikey.md)
 
 The public key (in .pem format) should be stored as `pubkey.pem` (see `pubkey.pem.example` in the repository).
+
 
 ## Building
 
