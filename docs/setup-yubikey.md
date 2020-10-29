@@ -36,7 +36,7 @@ yubico-piv-tool -aimport-key -s9c --touch-policy=always -iyubi.key
 ## Step 4: Setup certificates for each yubikey
 Even though the yubikeys already have a private key, most tools will
 expect a matching certificate to be present. So let's self-sign one.
-Note: replace '<some-number>' and '<key name>' with your own values.
+Note: replace `<some-number>` and `<key name>` with your own values.
 Note: touch the yubikey to complete the command
 ```
 yubico-piv-tool -a verify -a selfsign --valid-days <some-number> -s 9c -S "/CN=<key name>/" -i yubi.pub -o yubi.crt
