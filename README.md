@@ -5,7 +5,8 @@ Simple bootloader for STM32L0 microcontrollers, written in Rust
 
 ## Code signing
 
-This bootloader expects the firmware to be signed with ECC `P-256`, sometimes refered to as `prime256v1`.
+This bootloader expects the firmware to be signed with `ECC P-256`, sometimes refered to as `prime256v1`.
+The signature is appended to the end of the file as a raw 64-byte signature.
 
 ### Key pair
 You need to create a private-public key pair. The private key is used to sign firmware images
