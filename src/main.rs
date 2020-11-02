@@ -136,11 +136,11 @@ fn main() -> ! {
     let meta: FirmwareMeta = parse_meta(buffer);
     if meta.image_type != 0x3801 || meta.extra_file_count != 0 {
         ok = false;
-    }
 
     // Candidate image: firmware size must be within bounds
-    if meta.fw_len < FW_SIGNATURE_LEN 
+    } else if meta.fw_len < FW_SIGNATURE_LEN 
         || meta.fw_len < FW_META_OFFSET as usize
+        || meta.fw_len > int_flash::addresses().user_length
         || (meta.fw_len + FW_SIGNATURE_LEN) > int_flash::addresses().user_length {
             ok = false;
     }
