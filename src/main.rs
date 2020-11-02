@@ -111,6 +111,7 @@ fn main() -> ! {
         .SPI2
         .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 1.mhz(), &mut rcc);
 
+    wakeup_ext_flash(&mut delay, &mut ext_flash_cs);
     let mut ext_flash = ExternalFlash::init(spi, ext_flash_cs).unwrap();
     let id = ext_flash.read_jedec_id().unwrap();
     
@@ -122,6 +123,10 @@ fn main() -> ! {
     };
 
     let mut ok = true;
+
+    // Debrick delay: allows reflashing via SWD even if the firmware
+    // is invalid or disables SWD pins
+    delay.delay_ms(1_000_u32);
 
 
     // Read metadata from external flash
@@ -218,6 +223,20 @@ fn main() -> ! {
     
     run_user_program(cp.SCB);
 }
+
+
+// Wakeup external flash chip in case it is is in power-down mode
+fn wakeup_ext_flash<CS: OutputPin>(delay: &mut Delay, ext_flash_cs: &mut CS) {
+
+    // Pulse CS pin (pulse width should be at least 20ns)
+    ext_flash_cs.set_low().ok();
+    delay.delay_us(1_u32);
+    ext_flash_cs.set_high().ok();
+
+    // Wait for flash chip to wake up
+    delay.delay_us(75_u32);
+}
+
 
 fn blink_start_update<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
 {
