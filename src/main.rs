@@ -29,6 +29,7 @@ use stm32l0xx_hal::{
     prelude::*,
     rcc::Config,
     spi,
+    gpio,
     delay::Delay,
 };
 
@@ -96,20 +97,20 @@ fn main() -> ! {
     
     
     // SPI flash GPIO
+    ext_flash_cs = ext_flash_cs.set_speed(gpio::Speed::VeryHigh);
     ext_flash_cs.set_high().unwrap();
-    let spi_sclk = gpiob.pb13;
-    let spi_miso = gpiob.pb14;
-    let spi_mosi = gpiob.pb15;
+    let spi_sclk = gpiob.pb13.set_speed(gpio::Speed::VeryHigh);
+    let spi_miso = gpiob.pb14.set_speed(gpio::Speed::VeryHigh);
+    let spi_mosi = gpiob.pb15.set_speed(gpio::Speed::VeryHigh);
 
     // LED GPIO
     led.set_low().unwrap();
 
-
-    // 4MHz appears to be the maximum freq that works.
-    // Probably because the main clock is at 2-4MHz??
+    // SPI: runs at 16Mhz (same as CPU).
+    // NOTE: SPI implicitly depends on pin speed gpio::Speed::VeryHigh
     let spi = dp
         .SPI2
-        .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 1.mhz(), &mut rcc);
+        .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 16.mhz(), &mut rcc);
 
     wakeup_ext_flash(&mut delay, &mut ext_flash_cs);
     let mut ext_flash = ExternalFlash::init(spi, ext_flash_cs).unwrap();
