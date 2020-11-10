@@ -63,6 +63,24 @@ struct FirmwareMeta {
     fw_len: usize,
 }
 
+enum SignatureError {
+    Failed
+}
+fn verify_signature(hasher: sha2::Sha256, sig_bytes: [u8; 64]) -> Result<(), SignatureError> {
+    let r = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[0..32]);
+    let r = scalar::NonZeroScalar::<p256::NistP256>::from_repr(r).ok_or(SignatureError::Failed)?;
+    let s = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[32..64]);
+    let s = scalar::NonZeroScalar::<p256::NistP256>::from_repr(s).ok_or(SignatureError::Failed)?;
+    let sig = Signature::from_scalars(r, s).map_err(|_| SignatureError::Failed)?;
+
+    let pubkey = pubkey::FW_SIGN_PUBKEY;
+    let verify_key = VerifyKey::new(&pubkey).map_err(|_| SignatureError::Failed)?;
+    if !verify_key.verify_digest(hasher, &sig).is_ok() {
+        return Err(SignatureError::Failed);
+    }
+
+    return Ok(());
+}
 
 #[entry]
 fn main() -> ! {
@@ -98,13 +116,13 @@ fn main() -> ! {
     
     // SPI flash GPIO
     ext_flash_cs = ext_flash_cs.set_speed(gpio::Speed::VeryHigh);
-    ext_flash_cs.set_high().unwrap();
+    ext_flash_cs.set_high().ok();
     let spi_sclk = gpiob.pb13.set_speed(gpio::Speed::VeryHigh);
     let spi_miso = gpiob.pb14.set_speed(gpio::Speed::VeryHigh);
     let spi_mosi = gpiob.pb15.set_speed(gpio::Speed::VeryHigh);
 
     // LED GPIO
-    led.set_low().unwrap();
+    led.set_low().ok();
 
     // SPI: runs at 16Mhz (same as CPU).
     // NOTE: SPI implicitly depends on pin speed gpio::Speed::VeryHigh
@@ -170,17 +188,11 @@ fn main() -> ! {
         // Read & verify ECC P-256 signature
         let mut sig_bytes : [u8; 64] = [1;64];
         ext_flash.read(fw_len as u32, &mut sig_bytes).unwrap();
-        let r = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[0..32]);
-        let r = scalar::NonZeroScalar::<p256::NistP256>::from_repr(r).unwrap();
-        let s = FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[32..64]);
-        let s = scalar::NonZeroScalar::<p256::NistP256>::from_repr(*s).unwrap();
-        let sig = Signature::from_scalars(r, s).unwrap();
 
-        let pubkey = pubkey::FW_SIGN_PUBKEY;
-        let verify_key = VerifyKey::new(&pubkey).unwrap();
-        if !verify_key.verify_digest(hasher, &sig).is_ok() {
-            ok = false;
-        }
+        ok = match verify_signature(hasher, sig_bytes) {
+            Err(_) => false,
+            Ok(_) => true
+        };
     }
 
     // Copy image to internal flash (TODO only do this if ext_flash != int_flash)
