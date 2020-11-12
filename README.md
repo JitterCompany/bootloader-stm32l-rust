@@ -55,5 +55,14 @@ The bootloader supports multiple target boards. Board-specific source code is
 specified by `#[cfg(feature = "board-XXX")]`. Pass the desired board to cargo/bobbin
 to build the right version. For example:
 
-`bobbin load --bin mcu-bootloader-rust --release --features "board-6001-devkit"`
+```
+cargo build --release --features "board-6001-devkit"
+```
 Builds the 'board-6001-devkit' specific version.
+
+You can also use bobbin to immediately flash the binary as well
+```
+bobbin load --bin mcu-bootloader-rust --release --features "board-6001-devkit"
+```
+
+
