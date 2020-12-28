@@ -11,6 +11,7 @@ version = "0.1.0"
 board-6001-devkit = []
 board-6001-sensor = []
 board-6001-gateway = []
+board-4006-sensor = []
 
 
 [build-dependencies]

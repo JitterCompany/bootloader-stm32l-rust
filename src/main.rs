@@ -112,6 +112,11 @@ fn main() -> ! {
     let mut led = gpioa.pa0.into_push_pull_output();
     #[cfg(feature = "board-6001-gateway")]
     let mut ext_flash_cs = gpioa.pa11.into_push_pull_output();  
+
+    #[cfg(feature = "board-4006-sensor")]
+    let mut led = gpioa.pa0.into_push_pull_output();
+    #[cfg(feature = "board-4006-sensor")]
+    let mut ext_flash_cs = gpiob.pb12.into_push_pull_output();
     
     
     // SPI flash GPIO
