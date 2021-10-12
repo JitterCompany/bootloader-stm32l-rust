@@ -33,6 +33,11 @@ and should be kept secret (e.g. keep it offline, ideally on a hardware smartcard
 
 The public key (in .pem format) should be stored as `pubkey.pem` (see `pubkey.pem.example` in the repository).
 
+### Firmware blacklist
+
+An optional blacklist of known-bad firmwares can be written in blacklist.txt. To disable the blacklist,
+simply place an empty blacklist.txt in the project root.
+
 
 ## Building
 

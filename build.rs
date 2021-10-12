@@ -11,17 +11,19 @@
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::io::Write;
 use std::path::PathBuf;
+use std::vec;
+
 use openssl;
-//use pem_parser;
-//use ecdsa;
-//use p256::{PublicKey};
-//use p256::ecdsa;
-//use signature::Signature;
+use hex::FromHex;
 
 fn generate_pubkey() -> std::io::Result<()> {
-    let pubkey_pem = fs::read("pubkey.pem").unwrap();  
+    let filename = "pubkey.pem";
+    println!("cargo:rerun-if-changed={}", filename);
+    let pubkey_pem = fs::read(filename)?;
+
     let ec_key = openssl::ec::EcKey::public_key_from_pem(&pubkey_pem).unwrap();
     let pubkey = ec_key.public_key();
     let grp = openssl::ec::EcGroup::from_curve_name(openssl::nid::Nid::X9_62_PRIME256V1).unwrap();
@@ -54,9 +56,56 @@ fn generate_pubkey() -> std::io::Result<()> {
     Ok(())
 }
 
+fn generate_blacklist() -> std::io::Result<()> {
+
+    let filename = "blacklist.txt";
+    println!("cargo:rerun-if-changed={}", filename);
+    let file = File::open(filename)?;
+    let reader = BufReader::new(file);
+
+    let mut hash_list: Vec<[u8;32]> = vec![];
+
+    for (i, line) in reader.lines().enumerate() {
+        let line = line?;
+        let line = line.trim();
+        if !line.starts_with("#") && line.len() > 0 {
+            if line.len() < 64 {
+                panic!("Blacklist.txt line {}: invalid SHA256 hash: too short!", i);
+            }
+
+            //let hex_bytes = hex::decode(line);
+            match <[u8;32]>::from_hex(line) {
+                Ok(hash) => {
+                    hash_list.push(hash);
+                }
+                Err(_) => {
+                    println!("Blacklist.txt line {}: '{}' is not a valid SHA256 hash", i, line);
+                }
+            }
+        }
+    }
+
+    let mut out = File::create("src//blacklist.rs")?;
+    out.write_all(b"\n//NOTE: this file is auto-generated from `blacklist.txt`, do not edit!\n\n").ok();
+    out.write_all(b"// Blacklisted SHA-256 hashes, each 32 bytes (32*8=256 bits):\n").ok();
+    write!(&mut out, "pub const FW_BLACKLIST: [[u8; 32]; {}] = [\n", hash_list.len()).ok();
+
+    for hash in hash_list {
+        out.write_all(b"\t[").unwrap();
+        for byte in hash {
+            write!(&mut out, "0x{:02X}, ", byte).ok();
+        }
+        out.write_all(b"],\n").unwrap();
+    }
+    out.write_all(b"\n];")?;
+    Ok(())
+}
+
 fn main() {
     
-    generate_pubkey().unwrap();
+    generate_pubkey().expect("Failed to build public key: See pubkey.pem.example for an example!");
+
+    generate_blacklist().expect("Failed to build blacklist: See blacklist.txt.example for an example!");
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());

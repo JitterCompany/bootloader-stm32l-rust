@@ -16,6 +16,7 @@ board-4006-sensor = []
 
 [build-dependencies]
 openssl = "0.10.30"
+hex = "0.4.3"
 
 
 [dependencies]

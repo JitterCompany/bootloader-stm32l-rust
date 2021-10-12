@@ -40,6 +40,7 @@ use spi_memory::{
 
 mod int_flash;
 mod pubkey;
+mod blacklist;
 
 
 fn parse_meta(buffer: [u8; 8]) -> FirmwareMeta
@@ -64,9 +65,25 @@ struct FirmwareMeta {
 }
 
 enum SignatureError {
+    Blacklisted,
     Failed
 }
+
+fn is_blacklisted(hash: &[u8]) -> bool {
+
+    for forbidden in blacklist::FW_BLACKLIST {
+        if hash == forbidden {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 fn verify_signature(hasher: sha2::Sha256, sig_bytes: [u8; 64]) -> Result<(), SignatureError> {
+    if is_blacklisted(hasher.clone().finalize().as_slice()) {
+        return Err(SignatureError::Blacklisted);
+    }
     let r = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[0..32]);
     let r = scalar::NonZeroScalar::<p256::NistP256>::from_repr(r).ok_or(SignatureError::Failed)?;
     let s = *FieldBytes::<p256::NistP256>::from_slice(&sig_bytes[32..64]);

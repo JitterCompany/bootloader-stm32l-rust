@@ -3,9 +3,11 @@
 .gdb_history
 target/
 pubkey.pem
+blacklist.txt
 
 # auto-generated files
 src/pubkey.rs
+src/blacklist.rs
 
 # editor files
 .vscode/*

@@ -1,0 +1,13 @@
+# Firmware blacklist. Edit and copy this to blacklist.txt
+#
+# This is a blacklist of firmware hashes that the bootloader will reject.
+# The blacklist may be used to reject old or known bad firmwares or to recover
+# a board that currently has a broken firmware.
+#
+# Each line in this file represents a SHA256 hash (hexadecimal) of a firmware binary.
+
+
+
+# Example: this is a valid hash of an empty file:
+# e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
