@@ -18,17 +18,17 @@ extern {
     static __FLASH_USER_LENGTH: u32;
 }
 
-pub const PAGE_SIZE : u32 = flash::PAGE_SIZE;
+pub const PAGE_SIZE : u32 = flash::PAGE_SIZE as u32;
 
 pub fn addresses() -> FlashAddr {
 
     // Read constants from linker script
     let flash_start: *const u32 = unsafe{ &__FLASH_START};
     let flash_start = flash_start as u32;
-    
+
     let flash_user_start: *const u32 = unsafe{ &__FLASH_USER_START};
     let flash_user_start = flash_user_start as u32;
-    
+
     let flash_user_length: *const u32 = unsafe{ &__FLASH_USER_LENGTH};
     let flash_user_length = flash_user_length as usize;
 
@@ -70,7 +70,7 @@ impl InternalFlash {
         self.periph
             .erase_flash_page(addr as *mut u32)
             .expect("Faileld to erase flash page");
-        
+
         // Verify page is all-zeroes (this is redundant, could be removed later..)
         let page_ptr = addr as *mut u8;
         for i in 0..PAGE_SIZE {

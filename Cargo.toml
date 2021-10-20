@@ -20,7 +20,7 @@ hex = "0.4.3"
 
 
 [dependencies]
-cortex-m = "0.6.0"
+cortex-m = "0.7.3"
 cortex-m-rt = "0.6.10"
 panic-halt = "0.2.0"
 spi-memory = "0.2.0"
@@ -47,7 +47,9 @@ features = [ "digest-preview" ]
 # version = "0.7.1"
 
 [dependencies.stm32l0xx-hal]
-version = "0.6.2"
+#version = "0.7.0"
+git = "https://github.com/stm32-rs/stm32l0xx-hal.git"
+rev = "1d26fac7283d8a7d26d4bc51885bef9638d18051"
 features = ["mcu-STM32L082CZYx", "rt"]
 # (TODO? there is also a feature "disable-linker-script". Should we use that??)
 
