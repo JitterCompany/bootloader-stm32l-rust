@@ -30,19 +30,18 @@ fn generate_pubkey() -> std::io::Result<()> {
     let form = openssl::ec::PointConversionForm::UNCOMPRESSED;
     let mut bignum_ctx = openssl::bn::BigNumContext::new().unwrap();
     let pub_bytes = pubkey.to_bytes(&grp, form, &mut bignum_ctx).unwrap();
-    
-    
+
     //let pubkey_der = pem_parser::pem_to_der(&pubkey_pem);
-    
+
     //ecdsa::Asn1Signature::from_bytes(&pubkey_der);
 
-
-
     let mut out = File::create("src//pubkey.rs")?;
-    out.write_all(b"\n//NOTE: this file is auto-generated from `pubkey.pem`, do not edit!\n\n").ok();
+    out.write_all(b"\n//NOTE: this file is auto-generated from `pubkey.pem`, do not edit!\n\n")
+        .ok();
 
     out.write_all(b"// EC Public key in raw R,S format.\n").ok();
-    out.write_all(b"pub const FW_SIGN_PUBKEY: [u8; 65] = [\n").ok();
+    out.write_all(b"pub const FW_SIGN_PUBKEY: [u8; 65] = [\n")
+        .ok();
     for i in 0..pub_bytes.len() {
         write!(&mut out, "0x{:02X},", pub_bytes[i]).ok();
         if i % 8 == 7 {
@@ -50,20 +49,18 @@ fn generate_pubkey() -> std::io::Result<()> {
         } else {
             out.write_all(b" ").ok();
         }
-        
     }
     out.write_all(b"\n];")?;
     Ok(())
 }
 
 fn generate_blacklist() -> std::io::Result<()> {
-
     let filename = "blacklist.txt";
     println!("cargo:rerun-if-changed={}", filename);
     let file = File::open(filename)?;
     let reader = BufReader::new(file);
 
-    let mut hash_list: Vec<[u8;32]> = vec![];
+    let mut hash_list: Vec<[u8; 32]> = vec![];
 
     for (i, line) in reader.lines().enumerate() {
         let line = line?;
@@ -74,21 +71,31 @@ fn generate_blacklist() -> std::io::Result<()> {
             }
 
             //let hex_bytes = hex::decode(line);
-            match <[u8;32]>::from_hex(line) {
+            match <[u8; 32]>::from_hex(line) {
                 Ok(hash) => {
                     hash_list.push(hash);
                 }
                 Err(_) => {
-                    println!("Blacklist.txt line {}: '{}' is not a valid SHA256 hash", i, line);
+                    println!(
+                        "Blacklist.txt line {}: '{}' is not a valid SHA256 hash",
+                        i, line
+                    );
                 }
             }
         }
     }
 
     let mut out = File::create("src//blacklist.rs")?;
-    out.write_all(b"\n//NOTE: this file is auto-generated from `blacklist.txt`, do not edit!\n\n").ok();
-    out.write_all(b"// Blacklisted SHA-256 hashes, each 32 bytes (32*8=256 bits):\n").ok();
-    write!(&mut out, "pub const FW_BLACKLIST: [[u8; 32]; {}] = [\n", hash_list.len()).ok();
+    out.write_all(b"\n//NOTE: this file is auto-generated from `blacklist.txt`, do not edit!\n\n")
+        .ok();
+    out.write_all(b"// Blacklisted SHA-256 hashes, each 32 bytes (32*8=256 bits):\n")
+        .ok();
+    write!(
+        &mut out,
+        "pub const FW_BLACKLIST: [[u8; 32]; {}] = [\n",
+        hash_list.len()
+    )
+    .ok();
 
     for hash in hash_list {
         out.write_all(b"\t[").unwrap();
@@ -102,10 +109,10 @@ fn generate_blacklist() -> std::io::Result<()> {
 }
 
 fn main() {
-    
     generate_pubkey().expect("Failed to build public key: See pubkey.pem.example for an example!");
 
-    generate_blacklist().expect("Failed to build blacklist: See blacklist.txt.example for an example!");
+    generate_blacklist()
+        .expect("Failed to build blacklist: See blacklist.txt.example for an example!");
     // Put `memory.x` in our output directory and ensure it's
     // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());

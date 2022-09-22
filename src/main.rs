@@ -1,50 +1,29 @@
 #![no_std]
 #![no_main]
 
-use panic_reset as _;
 use core::cmp;
+use panic_reset as _;
 
 use p256::{
-    ecdsa::{
-        VerifyKey,
-        Signature,
-    },
-    elliptic_curve::FieldBytes,
+    ecdsa::{Signature, VerifyKey},
     elliptic_curve::scalar,
+    elliptic_curve::FieldBytes,
 };
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use signature::DigestVerifier;
 
-
-
+use cortex_m::{asm, peripheral::SCB, register};
 use cortex_m_rt::entry;
-use cortex_m::{
-    asm,
-    register,
-    peripheral::SCB,
-};
-use stm32l0xx_hal::{
-    pac,
-    prelude::*,
-    rcc::Config,
-    spi,
-    gpio,
-    delay::Delay,
-};
+use stm32l0xx_hal::{delay::Delay, gpio, pac, prelude::*, rcc::Config, spi};
 
-use spi_memory::{
-    series25::Flash as ExternalFlash,
-    Read,
-};
+use spi_memory::{series25::Flash as ExternalFlash, Read};
 
+mod blacklist;
 mod int_flash;
 mod pubkey;
-mod blacklist;
 
-
-fn parse_meta(buffer: [u8; 8]) -> FirmwareMeta
-{
+fn parse_meta(buffer: [u8; 8]) -> FirmwareMeta {
     FirmwareMeta {
         image_type: (buffer[1] as u16) << 8 | (buffer[0] as u16),
         extra_file_count: (buffer[3] as u16) << 8 | (buffer[2] as u16),
@@ -66,11 +45,10 @@ struct FirmwareMeta {
 
 enum SignatureError {
     Blacklisted,
-    Failed
+    Failed,
 }
 
 fn is_blacklisted(hash: &[u8]) -> bool {
-
     for forbidden in blacklist::FW_BLACKLIST {
         if hash == forbidden {
             return true;
@@ -78,7 +56,6 @@ fn is_blacklisted(hash: &[u8]) -> bool {
     }
     return false;
 }
-
 
 fn verify_signature(hasher: sha2::Sha256, sig_bytes: [u8; 64]) -> Result<(), SignatureError> {
     if is_blacklisted(hasher.clone().finalize().as_slice()) {
@@ -101,7 +78,6 @@ fn verify_signature(hasher: sha2::Sha256, sig_bytes: [u8; 64]) -> Result<(), Sig
 
 #[entry]
 fn main() -> ! {
-
     let dp = pac::Peripherals::take().unwrap();
     let cp = cortex_m::Peripherals::take().unwrap();
 
@@ -132,12 +108,10 @@ fn main() -> ! {
 
     #[cfg(feature = "board-4006-sensor")]
     let (mut led, mut ext_flash_cs) = {
-
         // Hardware version detect
         //let hw_det = gpiob.pb15.into_pull_up_input();
 
         let is_v1 = gpiob.pb15.with_pull_up_input(|hw_det| {
-
             delay.delay_ms(2_u32);
             if let Ok(v1) = hw_det.is_high() {
                 v1
@@ -156,7 +130,6 @@ fn main() -> ! {
         (led, ext_flash_cs)
     };
 
-
     // SPI flash GPIO
     ext_flash_cs = ext_flash_cs.set_speed(gpio::Speed::VeryHigh);
     ext_flash_cs.set_high().ok();
@@ -169,9 +142,12 @@ fn main() -> ! {
 
     // SPI: runs at 16Mhz (same as CPU).
     // NOTE: SPI implicitly depends on pin speed gpio::Speed::VeryHigh
-    let spi = dp
-        .SPI2
-        .spi((spi_sclk, spi_miso, spi_mosi), spi::MODE_0, 16_000_000.Hz(), &mut rcc);
+    let spi = dp.SPI2.spi(
+        (spi_sclk, spi_miso, spi_mosi),
+        spi::MODE_0,
+        16_000_000.Hz(),
+        &mut rcc,
+    );
 
     wakeup_ext_flash(&mut delay, &mut ext_flash_cs);
     let mut ext_flash = ExternalFlash::init(spi, ext_flash_cs).unwrap();
@@ -190,7 +166,6 @@ fn main() -> ! {
     // is invalid or disables SWD pins
     delay.delay_ms(1_000_u32);
 
-
     // Read metadata from external flash
     let mut buffer: [u8; 8] = [0; 8];
     ext_flash.read(FW_META_OFFSET, &mut buffer).unwrap();
@@ -202,8 +177,9 @@ fn main() -> ! {
     } else if meta.fw_len < FW_SIGNATURE_LEN
         || meta.fw_len < FW_META_OFFSET as usize
         || meta.fw_len > int_flash::addresses().user_length
-        || (meta.fw_len + FW_SIGNATURE_LEN) > int_flash::addresses().user_length {
-            ok = false;
+        || (meta.fw_len + FW_SIGNATURE_LEN) > int_flash::addresses().user_length
+    {
+        ok = false;
     }
 
     // Candidate image: check signature
@@ -214,27 +190,27 @@ fn main() -> ! {
         let fw_len: usize = meta.fw_len - FW_SIGNATURE_LEN;
 
         let mut hasher = Sha256::new();
-        let mut bytes_remaining:usize = fw_len;
-        let mut offset:usize = 0;
+        let mut bytes_remaining: usize = fw_len;
+        let mut offset: usize = 0;
         while bytes_remaining > 0 {
             let mut buffer: [u8; BLOCK_SIZE] = [0; BLOCK_SIZE];
 
-            let len:usize = cmp::min(bytes_remaining, BLOCK_SIZE);
+            let len: usize = cmp::min(bytes_remaining, BLOCK_SIZE);
 
             ext_flash.read(offset as u32, &mut buffer[0..len]).unwrap();
-            bytes_remaining-= len;
-            offset+= len;
+            bytes_remaining -= len;
+            offset += len;
 
             hasher.update(&buffer[0..len]);
         }
 
         // Read & verify ECC P-256 signature
-        let mut sig_bytes : [u8; 64] = [1;64];
+        let mut sig_bytes: [u8; 64] = [1; 64];
         ext_flash.read(fw_len as u32, &mut sig_bytes).unwrap();
 
         ok = match verify_signature(hasher, sig_bytes) {
             Err(_) => false,
-            Ok(_) => true
+            Ok(_) => true,
         };
     }
 
@@ -245,15 +221,18 @@ fn main() -> ! {
         let flash_user_offset = addr.user_start - addr.start;
 
         // Total length of firmware image in bytes (incl signature)
-        let mut bytes_remaining:usize = meta.fw_len;
-        let mut ext_offset:usize = 0;
+        let mut bytes_remaining: usize = meta.fw_len;
+        let mut ext_offset: usize = 0;
 
         while bytes_remaining > 0 {
-            let len:usize = cmp::min(bytes_remaining, int_flash::PAGE_SIZE as usize);
+            let len: usize = cmp::min(bytes_remaining, int_flash::PAGE_SIZE as usize);
 
             // Read up to one page of data from ext_flash
-            let mut buffer: [u8; int_flash::PAGE_SIZE as usize] = [0; int_flash::PAGE_SIZE as usize];
-            ext_flash.read(ext_offset as u32, &mut buffer[0..len]).unwrap();
+            let mut buffer: [u8; int_flash::PAGE_SIZE as usize] =
+                [0; int_flash::PAGE_SIZE as usize];
+            ext_flash
+                .read(ext_offset as u32, &mut buffer[0..len])
+                .unwrap();
 
             // Copy data to internal mcu_flash
             // NOTE: we always write the whole page, the last page is effectively zero-padded
@@ -261,8 +240,8 @@ fn main() -> ! {
             let int_page_no: u32 = (ext_offset as u32 + flash_user_offset) / int_flash::PAGE_SIZE;
             mcu_flash.write_page(int_page_no, &buffer);
 
-            bytes_remaining-= len;
-            ext_offset+= len;
+            bytes_remaining -= len;
+            ext_offset += len;
         }
     }
 
@@ -272,18 +251,11 @@ fn main() -> ! {
         blink_error(&mut delay, &mut led);
     }
 
-
-
-
-
-
     run_user_program(cp.SCB);
 }
 
-
 // Wakeup external flash chip in case it is is in power-down mode
 fn wakeup_ext_flash<CS: OutputPin>(delay: &mut Delay, ext_flash_cs: &mut CS) {
-
     // Pulse CS pin (pulse width should be at least 20ns)
     ext_flash_cs.set_low().ok();
     delay.delay_us(1_u32);
@@ -293,15 +265,12 @@ fn wakeup_ext_flash<CS: OutputPin>(delay: &mut Delay, ext_flash_cs: &mut CS) {
     delay.delay_us(75_u32);
 }
 
-
-fn blink_start_update<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
-{
+fn blink_start_update<LED: OutputPin>(delay: &mut Delay, led: &mut LED) {
     led.set_high().ok();
     delay.delay_ms(300_u32);
     led.set_low().ok();
 }
-fn blink_ok<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
-{
+fn blink_ok<LED: OutputPin>(delay: &mut Delay, led: &mut LED) {
     for _ in 0..2 {
         led.set_high().ok();
         delay.delay_ms(300_u32);
@@ -310,8 +279,7 @@ fn blink_ok<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
         delay.delay_ms(600_u32);
     }
 }
-fn blink_error<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
-{
+fn blink_error<LED: OutputPin>(delay: &mut Delay, led: &mut LED) {
     for _ in 0..3 {
         led.set_high().ok();
         delay.delay_ms(50_u32);
@@ -321,31 +289,28 @@ fn blink_error<LED: OutputPin>(delay: &mut Delay, led: &mut LED)
     }
 }
 
-
-
 #[no_mangle]
 extern "C" fn dummy() {}
 
 static mut USER_PROGRAM: extern "C" fn() = dummy;
 
 fn run_user_program(scb: SCB) -> ! {
-
     // Get important flash addresses
     let addr = int_flash::addresses();
 
     // Get user stack address from vector table
-    let user_stack : *const u32 = addr.user_start as *const u32;
-    let user_stack = unsafe{*user_stack};
+    let user_stack: *const u32 = addr.user_start as *const u32;
+    let user_stack = unsafe { *user_stack };
 
     // Create 'function pointer' to user program
-    let user_program : *const u32 = (addr.user_start + 4) as *const u32;
-    let user_program = unsafe {*user_program as *const ()};
+    let user_program: *const u32 = (addr.user_start + 4) as *const u32;
+    let user_program = unsafe { *user_program as *const () };
 
     unsafe {
         // Note: this must be a global as we cannot use the stack while jumping to user firmware
         USER_PROGRAM = core::mem::transmute(user_program);
 
-        let vector_table_offset : u32 = addr.user_start - addr.start;
+        let vector_table_offset: u32 = addr.user_start - addr.start;
 
         // Relocate vector table: use vector table from user program
         scb.vtor.write(vector_table_offset);
