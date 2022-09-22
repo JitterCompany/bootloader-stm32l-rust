@@ -11,13 +11,13 @@
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::vec;
 
-use openssl;
 use hex::FromHex;
+use openssl;
 
 fn generate_pubkey() -> std::io::Result<()> {
     let filename = "pubkey.pem";
