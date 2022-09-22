@@ -13,7 +13,7 @@ use p256::{
 use sha2::{Digest, Sha256};
 use signature::DigestVerifier;
 
-use cortex_m::{asm, peripheral::SCB, register};
+use cortex_m::{asm, peripheral::SCB};
 use cortex_m_rt::entry;
 use stm32l0xx_hal::{delay::Delay, gpio, pac, prelude::*, rcc::Config, spi};
 
@@ -292,42 +292,29 @@ fn blink_error<LED: OutputPin>(delay: &mut Delay, led: &mut LED) {
 #[no_mangle]
 extern "C" fn dummy() {}
 
-static mut USER_PROGRAM: extern "C" fn() = dummy;
-
 fn run_user_program(scb: SCB) -> ! {
     // Get important flash addresses
     let addr = int_flash::addresses();
 
     // Get user stack address from vector table
-    let user_stack: *const u32 = addr.user_start as *const u32;
-    let user_stack = unsafe { *user_stack };
+    let user_stack: *const *const u32 = addr.user_start as *const *const u32;
+    let user_stack: *const u32 = unsafe { *user_stack };
 
-    // Create 'function pointer' to user program
-    let user_program: *const u32 = (addr.user_start + 4) as *const u32;
-    let user_program = unsafe { *user_program as *const () };
+    // Create user program (reset vector) address from vector table
+    let user_program: *const *const u32 = (addr.user_start + 4) as *const *const u32;
+    let user_program: *const u32 = unsafe { *user_program };
+
+    let vector_table_offset: u32 = addr.user_start - addr.start;
 
     unsafe {
-        // Note: this must be a global as we cannot use the stack while jumping to user firmware
-        USER_PROGRAM = core::mem::transmute(user_program);
-
-        let vector_table_offset: u32 = addr.user_start - addr.start;
-
         // Relocate vector table: use vector table from user program
         scb.vtor.write(vector_table_offset);
-
-        // Set stack pointer to user stack.
-        // NOTE: no stack memory can be used untill the jump to user firmware.
-        // (this assumes everything after this point is inlined by compiler)
-        register::msp::write(user_stack);
 
         // Memory barrier: flush memory cache, don't reorder memory access
         asm::dsb();
         asm::isb();
 
         // Jump to user firmware
-        USER_PROGRAM();
+        asm::bootstrap(user_stack, user_program);
     }
-
-    // user program should never return, this is never reached
-    loop {}
 }
