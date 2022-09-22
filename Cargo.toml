@@ -15,14 +15,14 @@ board-4006-sensor = []
 
 
 [build-dependencies]
-openssl = "0.10.30"
+openssl = { version = "0.10.30", features = ["vendored"]}
 hex = "0.4.3"
 
 
 [dependencies]
 cortex-m = "0.7.3"
 cortex-m-rt = "0.6.10"
-panic-halt = "0.2.0"
+panic-reset = "0.1.1"
 spi-memory = "0.2.0"
 
 [dependencies.sha2]

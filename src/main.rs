@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-use panic_halt as _;
+use panic_reset as _;
 use core::cmp;
 
 use p256::{
